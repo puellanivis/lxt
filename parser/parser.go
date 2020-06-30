@@ -313,7 +313,8 @@ func (r *Reader) parseStatement(ctx context.Context, xsl *xslt.Stylesheet) error
 
 		case "var":
 			r.consume()
-			param, err := r.parseParam(ctx)
+
+			param, err := r.parseVariable(ctx)
 			if err != nil {
 				return err
 			}
