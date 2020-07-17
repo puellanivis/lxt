@@ -51,8 +51,53 @@ func (r *Reader) peak(ctx context.Context) (tokenizer.Token, error) {
 	return r.tok, r.err
 }
 
+func (r *Reader) readSkipComma(ctx context.Context) (tokenizer.Token, error) {
+	r.consume()
+	return r.peakSkipComma(ctx)
+}
+
+func (r *Reader) peakSkipComma(ctx context.Context) (tokenizer.Token, error) {
+	tok, err := r.peak(ctx)
+
+	if tok.Type == tokenizer.TokenTypeComma {
+		return r.read(ctx)
+	}
+
+	return tok, err
+}
+
 func (r *Reader) consume() {
 	r.tok = tokenizer.Empty
+}
+
+func (r *Reader) tokenIs(ctx context.Context, match tokenizer.Token) bool {
+	tok, _ := r.peak(ctx)
+	return tok == match
+}
+
+func (r *Reader) nextIs(ctx context.Context, match tokenizer.Token) bool {
+	tok, _ := r.read(ctx)
+	return tok == match
+}
+
+func (r *Reader) mustBe(ctx context.Context, match tokenizer.Token) error {
+	tok, err := r.peak(ctx)
+	if err != nil {
+		return err
+	}
+
+	if tok != match {
+		return r.parseErrorf("unexpected token: expecting %s", match)
+	}
+
+	r.consume()
+
+	return nil
+}
+
+func (r *Reader) nextMustBe(ctx context.Context, match tokenizer.Token) error {
+	r.consume()
+	return r.mustBe(ctx, match)
 }
 
 func (r *Reader) parseErrorf(f string, args ...interface{}) error {
@@ -259,11 +304,7 @@ func (r *Reader) parseSubfunction(ctx context.Context) (interface{}, error) {
 }
 
 func (r *Reader) parseStatement(ctx context.Context, xsl *xslt.Stylesheet) error {
-	tok, err := r.peak(ctx)
-	if tok.Type == tokenizer.TokenTypeComma {
-		tok, err = r.read(ctx)
-	}
-
+	tok, err := r.peakSkipComma(ctx)
 	if err != nil {
 		return err
 	}
@@ -303,7 +344,7 @@ func (r *Reader) parseStatement(ctx context.Context, xsl *xslt.Stylesheet) error
 		case "param":
 			r.consume()
 
-			param, err := r.parseParam(ctx)
+			param, err := r.parseParam(ctx, tokenizer.OperatorEquals)
 			if err != nil {
 				return err
 			}
@@ -314,7 +355,7 @@ func (r *Reader) parseStatement(ctx context.Context, xsl *xslt.Stylesheet) error
 		case "var":
 			r.consume()
 
-			param, err := r.parseVariable(ctx)
+			param, err := r.parseVariable(ctx, tokenizer.OperatorEquals)
 			if err != nil {
 				return err
 			}
@@ -329,11 +370,7 @@ func (r *Reader) parseStatement(ctx context.Context, xsl *xslt.Stylesheet) error
 }
 
 func (r *Reader) parseExpression(ctx context.Context) (interface{}, error) {
-	tok, err := r.peak(ctx)
-	if tok.Type == tokenizer.TokenTypeComma {
-		tok, err = r.read(ctx)
-	}
-
+	tok, err := r.peakSkipComma(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +417,7 @@ func (r *Reader) parseExpression(ctx context.Context) (interface{}, error) {
 
 		case "var":
 			r.consume()
-			return r.parseVariable(ctx)
+			return r.parseVariable(ctx, tokenizer.OperatorEquals)
 
 		case "foreach":
 			return r.parseForEach(ctx)
@@ -512,17 +549,13 @@ func (r *Reader) parseMap(ctx context.Context) (map[string]string, error) {
 		fallthrough
 
 	default:
-		return nil, r.parseError("expected group")
+		return nil, r.parseError("expected start of grouping")
 	}
 
 	m := make(map[string]string)
 
 	for {
-		key, err := r.read(ctx)
-		if key.Type == tokenizer.TokenTypeComma {
-			key, err = r.read(ctx)
-		}
-
+		key, err := r.readSkipComma(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -543,11 +576,11 @@ func (r *Reader) parseMap(ctx context.Context) (map[string]string, error) {
 			return nil, r.parseError("expected ident or string")
 		}
 
-		val, err := r.read(ctx)
-		if val.Type == tokenizer.TokenTypeComma {
-			val, err = r.read(ctx)
+		if err := r.nextMustBe(ctx, tokenizer.OperatorArrow); err != nil {
+			return nil, err
 		}
 
+		val, err := r.read(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -567,17 +600,13 @@ func (r *Reader) parseGroup(ctx context.Context, end tokenizer.Token) (xslt.Grou
 	var group xslt.Group
 
 	for {
-		tok, err := r.peak(ctx)
+		tok, err := r.peakSkipComma(ctx)
 		if err != nil {
 			if err == io.EOF {
 				return nil, r.parseError("unexpected EOF")
 			}
 
 			return nil, err
-		}
-
-		if tok.Type == tokenizer.TokenTypeComma {
-			tok, err = r.read(ctx)
 		}
 
 		if tok.Type == tokenizer.TokenTypeEndGroup {
@@ -650,10 +679,7 @@ func ParseFile(ctx context.Context, in io.Reader, filename string, xsl *xslt.Sty
 	}
 
 	for {
-		tok, err := r.peak(ctx)
-		if tok.Type == tokenizer.TokenTypeComma {
-			tok, err = r.read(ctx)
-		}
+		tok, err := r.peakSkipComma(ctx)
 
 		if tok == tokenizer.EOF {
 			return nil

@@ -20,15 +20,15 @@ func (r *Reader) parseParamList(ctx context.Context) ([]*xslt.Param, error) {
 		end = endTokenFromStart(tok)
 
 	default:
-		return nil, r.parseError("expected group")
+		return nil, r.parseError("expected start of grouping")
 	}
 
 	var params []*xslt.Param
 
 	for {
-		tok, err := r.peak(ctx)
-		if tok.Type == tokenizer.TokenTypeComma {
-			tok, err = r.read(ctx)
+		tok, err := r.peakSkipComma(ctx)
+		if err != nil {
+			return nil, err
 		}
 
 		if tok.Type == tokenizer.TokenTypeEndGroup {
@@ -40,11 +40,7 @@ func (r *Reader) parseParamList(ctx context.Context) ([]*xslt.Param, error) {
 			return params, nil
 		}
 
-		if err != nil {
-			return nil, err
-		}
-
-		param, err := r.parseParam(ctx)
+		param, err := r.parseParam(ctx, tokenizer.OperatorArrow)
 		if err != nil {
 			return nil, err
 		}
@@ -72,10 +68,7 @@ func (r *Reader) parseArgumentList(ctx context.Context) ([]*xslt.WithParam, erro
 	var args []*xslt.WithParam
 
 	for {
-		tok, err := r.peak(ctx)
-		if tok.Type == tokenizer.TokenTypeComma {
-			tok, err = r.read(ctx)
-		}
+		tok, err := r.peakSkipComma(ctx)
 
 		if tok.Type == tokenizer.TokenTypeEndGroup {
 			if tok != end {
@@ -90,7 +83,7 @@ func (r *Reader) parseArgumentList(ctx context.Context) ([]*xslt.WithParam, erro
 			return nil, err
 		}
 
-		arg, err := r.parseArgument(ctx)
+		arg, err := r.parseArgument(ctx, tokenizer.OperatorArrow)
 		if err != nil {
 			return nil, err
 		}
@@ -99,17 +92,17 @@ func (r *Reader) parseArgumentList(ctx context.Context) ([]*xslt.WithParam, erro
 	}
 }
 
-func (r *Reader) parseArgument(ctx context.Context) (*xslt.WithParam, error) {
-	v, err := r.parseVariable(ctx)
+func (r *Reader) parseArgument(ctx context.Context, assignOp tokenizer.Token) (*xslt.WithParam, error) {
+	v, err := r.parseVariable(ctx, assignOp)
 	return (*xslt.WithParam)(v), err
 }
 
-func (r *Reader) parseParam(ctx context.Context) (*xslt.Param, error) {
-	v, err := r.parseVariable(ctx)
+func (r *Reader) parseParam(ctx context.Context, assignOp tokenizer.Token) (*xslt.Param, error) {
+	v, err := r.parseVariable(ctx, assignOp)
 	return (*xslt.Param)(v), err
 }
 
-func (r *Reader) parseVariable(ctx context.Context) (*xslt.Variable, error) {
+func (r *Reader) parseVariable(ctx context.Context, assignOp tokenizer.Token) (*xslt.Variable, error) {
 	ident, err := r.peak(ctx)
 	if err != nil {
 		return nil, err
@@ -124,14 +117,14 @@ func (r *Reader) parseVariable(ctx context.Context) (*xslt.Variable, error) {
 	}
 
 	if name == "" {
-		return nil, r.parseError("param cannot have empty name")
+		return nil, r.parseError("variable name cannot be empty")
+	}
+
+	if err := r.nextMustBe(ctx, assignOp); err != nil {
+		return nil, err
 	}
 
 	val, err := r.read(ctx)
-	if val.Type == tokenizer.TokenTypeComma {
-		val, err = r.read(ctx)
-	}
-
 	if err != nil {
 		return nil, err
 	}

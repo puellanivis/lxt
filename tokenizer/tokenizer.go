@@ -452,7 +452,7 @@ func (r *Reader) ReadToken() (Token, error) {
 		}
 
 		return Token{
-			Type:  TokenTypeComma,
+			Type:  TokenTypeOperator,
 			Value: r.text(),
 		}, nil
 
@@ -462,7 +462,7 @@ func (r *Reader) ReadToken() (Token, error) {
 		}
 
 		return Token{
-			Type:  TokenTypeComma,
+			Type:  TokenTypeOperator,
 			Value: r.text(),
 		}, nil
 

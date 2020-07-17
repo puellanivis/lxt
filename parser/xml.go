@@ -48,10 +48,7 @@ func (r *Reader) parseAttribs(ctx context.Context) ([]*xslt.Attribute, error) {
 	var attribs []*xslt.Attribute
 
 	for {
-		tok, err := r.peak(ctx)
-		if tok.Type == tokenizer.TokenTypeComma {
-			tok, err = r.read(ctx)
-		}
+		tok, err := r.peakSkipComma(ctx)
 
 		if tok.Type == tokenizer.TokenTypeEndGroup {
 			if tok != end {
@@ -74,6 +71,9 @@ func (r *Reader) parseAttribs(ctx context.Context) ([]*xslt.Attribute, error) {
 		}
 
 		r.consume()
+		if err := r.mustBe(ctx, tokenizer.OperatorArrow); err != nil {
+			return nil, err
+		}
 
 		val, err := r.parseExpression(ctx)
 		if err != nil {
